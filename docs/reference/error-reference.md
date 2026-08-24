@@ -741,6 +741,19 @@ A whole-query raw statement returned a result that omits a column its row spec d
 
 A raw-SQL tagged template interpolated a JS value whose type cannot be auto-inferred to a codec (anything other than number, bigint, string, boolean, or Uint8Array). Wrap the value in `param(...)` with an explicit codec.
 
+### RUNTIME.TEMPORAL_UNAVAILABLE
+
+A value that only a global `Temporal` implementation can produce or read was needed in a runtime that has none. Two paths raise it, and they carry different metadata:
+
+- A Temporal-backed codec (`pg/date-temporal@1`, `pg/timestamp-temporal@1`, `pg/timestamptz-temporal@1`, `pg/time-temporal@1`) encoding or decoding a value. Meta: `codecId`, `operation` (`'encode'` or `'decode'`).
+- The `instantNow` mutation-default generator producing a value — for `temporal.updatedAt()`, or for a `temporal.timestamptz(…)` / `timestamp(…)` preset given an `onCreate`/`onUpdate` of `'now'`. No codec is involved. Meta: `generatorId`. (`temporal.createdAt()` is unaffected: it lowers to a PostgreSQL `now()` storage default, which never reaches a client-side clock.)
+
+The check is lazy: registering the target, validating a contract, building a runtime, resolving a descriptor and constructing a codec instance all succeed without `Temporal`. Only producing or interpreting a value fails.
+
+That covers more than an explicit write. It is raised on **reads**, because the check is the first thing a Temporal codec does on decode — selecting the column is enough. And it is raised on an **insert into a table carrying `temporal.updatedAt()`**, because that column's clock produces a `Temporal.Instant` even when your code never mentions a temporal value; that path reports `generatorId` rather than `codecId`, since no codec has been reached yet.
+
+Install a global implementation before any query runs (`import 'temporal-polyfill/full/global'`), or author the column with its `*String` type — `DateString`, `TimestampString(p)`, `TimestamptzString(p)`, `TimeString(p)` — to read and write PostgreSQL's own text, which needs no Temporal at all.
+
 ### RUNTIME.TRANSACTION_CLOSED
 
 A query result created inside a transaction was read after the transaction ended. Await the result or call `.toArray()` inside the transaction callback.
