@@ -14,6 +14,7 @@ import { notOk, ok, type Result } from '@internal/utils/result';
 import {
   CliStructuredError,
   errorPlanForgotTheFlag,
+  errorPlanOriginUnknown,
   errorSnapshotMissing,
   mapRefResolutionError,
 } from '../../utils/cli-errors';
@@ -195,7 +196,15 @@ export async function resolveFromForPlan(
   if (optionsFrom === undefined) {
     const dbRef = refs['db'];
     if (!dbRef) {
-      return ok({ kind: 'greenfield', fromHash: null, fromContract: null });
+      if (graphIsEmpty(space)) {
+        return ok({ kind: 'greenfield', fromHash: null, fromContract: null });
+      }
+      return notOk(
+        errorPlanOriginUnknown(
+          getReachableRefs(refs, graph),
+          findLatestMigration(graph)?.to ?? null,
+        ),
+      );
     }
     return resolveFromPolicy(
       { hash: dbRef.hash, provenance: { kind: 'ref', refName: 'db' } },
@@ -215,6 +224,10 @@ export async function resolveFromForPlan(
       return notOk(errorPlanForgotTheFlag(optionsFrom, getReachableRefs(refs, graph), graphTip));
     }
     return notOk(mapRefResolutionError(refResult.failure));
+  }
+
+  if (refResult.value.provenance.kind === 'reserved-empty') {
+    return ok({ kind: 'greenfield', fromHash: null, fromContract: null });
   }
 
   return resolveFromPolicy(refResult.value, input, refs, optionsFrom);
@@ -242,6 +255,19 @@ export async function resolveToForPlan(
   const refResult = parseContractRef(optionsTo, { graph, refs });
   if (!refResult.ok) {
     return notOk(mapRefResolutionError(refResult.failure));
+  }
+
+  if (refResult.value.provenance.kind === 'reserved-empty') {
+    return notOk(
+      mapRefResolutionError({
+        kind: 'wrong-grammar',
+        input: optionsTo,
+        expectedGrammar: 'contract',
+        message:
+          '`@empty` is only valid as an origin (`--from`); planning a migration to the empty contract is not supported through this shortcut',
+        fix: 'Pass `--to` a contract hash, ref name, or migration directory name. To plan starting from an empty database, use `--from @empty`.',
+      }),
+    );
   }
 
   const resolution = await resolveContractRef(refResult.value, space, {

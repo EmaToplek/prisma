@@ -15,7 +15,7 @@ The capture workflow is documented in [`.claude/skills/record-gotchas/SKILL.md`]
 ## Contents
 
 - [Demo fixture contract snapshots fail to deserialize during `migrate` (PN-CLI-4003)](#demo-fixture-contract-snapshots-fail-to-deserialize-during-migrate-pn-cli-4003)
-- [`migration plan` silently plans from an empty database when no `db` ref exists](#migration-plan-silently-plans-from-an-empty-database-when-no-db-ref-exists)
+- [`migration plan` silently planned from an empty database when no `db` ref existed (resolved)](#migration-plan-silently-planned-from-an-empty-database-when-no-db-ref-existed-resolved)
 - [`migration plan --from db` fails with MIGRATION.NO_TARGET once a rollback cycle exists](#migration-plan---from-db-fails-with-migrationno_target-once-a-rollback-cycle-exists)
 
 ---
@@ -54,7 +54,7 @@ $ pnpm prisma-next migrate --to prod --db $DB --config fixtures/diamond/prisma.c
 
 ---
 
-## `migration plan` silently plans from an empty database when no `db` ref exists
+## `migration plan` silently planned from an empty database when no `db` ref existed (resolved)
 
 **Filed upstream:** pending — authored in a session without Linear access; please file in [`pn-gotchas`](https://linear.app/prisma-company/project/pn-gotchas-a6f6f5157a5c/overview) and replace this line.
 **Product:** Prisma Next
@@ -63,9 +63,11 @@ $ pnpm prisma-next migrate --to prod --db $DB --config fixtures/diamond/prisma.c
 
 **Symptom.** With one migration already on disk and applied, adding a nullable field and running `prisma-next migration plan --name add_phone` produced a **full greenfield migration** (`from: null`, `Create schema "public"` + `Create table "user"`) instead of a one-column delta. No warning that the existing history was ignored.
 
-**Cause.** `resolveFromForPlan` ([`packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts), `optionsFrom === undefined` branch) falls back to the ref named `db` and, when it does not exist, straight to greenfield. Nothing advances the `db` ref unless the user opted in with `migrate --advance-ref db`, so the very first delta plan of a project that skipped that flag rebuilds the world. The command's own help ("Compares the emitted contract against the latest on-disk migration state") promises more than the default does.
+**Cause.** `resolveFromForPlan` ([`packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts), `optionsFrom === undefined` branch) falls back to the ref named `db` and, when it does not exist, straight to greenfield. Nothing advances the `db` ref unless the user opted in with `migrate --advance-ref db`, so the very first delta plan of a project that skipped that flag rebuilds the world. The command's own help ("Compares the emitted contract against the latest on-disk migration state") promises more than the default does.
 
 **Workaround.** Either apply with `prisma-next migrate --advance-ref db` from the start, or always pass `--from <latest-migration-dir>`. A CLI warning when the graph is non-empty but planning resolves to greenfield would remove the trap entirely.
+
+**Resolved.** `migration plan` now refuses this case instead of planning: when default origin resolution finds no `--from` and no `db` ref while migrations exist on disk, it fails with `MIGRATION.PLAN_ORIGIN_UNKNOWN` and names the three exits — set the `db` ref (`migration ref set db <contract>`, or advance it via `db update`), pass `--from <contract>`, or pass `--from @empty` to plan from an empty database deliberately. The first plan of a fresh project (empty graph) stays silently greenfield.
 
 **Reproduction.**
 1. Fresh project: `contract emit`, `migration plan --name init`, `migrate` (no `--advance-ref`).
@@ -73,8 +75,8 @@ $ pnpm prisma-next migrate --to prod --db $DB --config fixtures/diamond/prisma.c
 3. `migration plan --name add_phone` → planned operations are `Create schema` + `Create table`, `from: null`.
 
 **References.**
-- From-resolution: [`packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts)
-- The behaviour is documented defensively in the public docs (prisma/web#8025, generating-a-migration page warning), but the CLI itself stays silent.
+- From-resolution: [`packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts)
+- The behaviour was documented defensively in the public docs (prisma/web#8025, generating-a-migration page warning) back when the CLI itself stayed silent; the CLI now refuses with `MIGRATION.PLAN_ORIGIN_UNKNOWN`.
 
 ---
 
@@ -98,7 +100,7 @@ fix:  Use --from <hash> to specify the planning origin explicitly.
 
 The same command with `--from 20260707T1005_init` (a migration directory name) succeeds, and so does a full hash. Only the ref-name form (and the implicit `db`-ref default, which is the advertised no-flag workflow) hits the error, and the error's own fix text ("Use --from") is confusing when `--from` *was* passed.
 
-**Cause.** Unconfirmed; the ref-name resolution path appears to still run the latest-tip inference that throws on cyclic graphs, while the directory-name path resolves the origin directly. Worth a look at the plan target/origin resolution in [`packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts) and the `MIGRATION.NO_TARGET` throw site.
+**Cause.** Unconfirmed; the ref-name resolution path appears to still run the latest-tip inference that throws on cyclic graphs, while the directory-name path resolves the origin directly. Worth a look at the plan target/origin resolution in [`packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts) and the `MIGRATION.NO_TARGET` throw site.
 
 **Workaround.** After any rollback, pass `--from <migration-directory>` or `--from <full-hash>` explicitly. Ref names work again once the next forward migration breaks the ambiguity.
 
@@ -108,5 +110,5 @@ The same command with `--from 20260707T1005_init` (a migration directory name) s
 3. Change the contract, `contract emit`, then `migration plan --name add_bio --from db` → MIGRATION.NO_TARGET; retry with `--from <init-dir-name>` → succeeds.
 
 **References.**
-- Plan origin resolution: [`packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/utils/plan-resolution.ts)
+- Plan origin resolution: [`packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts`](packages/1-framework/3-tooling/cli/src/control-api/operations/plan-resolution.ts)
 - Related UX note: the public rollbacks docs (prisma/web#8025) currently tell users to pass `--from <dir>` after any rollback because of this.

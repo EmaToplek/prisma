@@ -419,6 +419,61 @@ export function errorSnapshotMissing(
   );
 }
 
+/**
+ * Default origin resolution for `migration plan` found nothing (no `--from`,
+ * no `db` ref) while migrations already exist on disk. Planning would silently
+ * produce an empty-origin migration that ignores the existing history — almost
+ * always a mistake — so the command refuses and names the three exits.
+ */
+export function errorPlanOriginUnknown(
+  reachableRefs: ReadonlyArray<{ readonly name: string; readonly hash: string }>,
+  graphTipHash: string | null,
+): ActionableCliError {
+  const fromSuggestion =
+    reachableRefs.length > 0
+      ? reachableRefs.map((r) => `--from ${r.name}`).join(' or ')
+      : graphTipHash !== null
+        ? `--from ${graphTipHash}`
+        : '--from <contract>';
+  const refSetCommand =
+    graphTipHash !== null
+      ? `{bin} migration ref set db ${graphTipHash}`
+      : '{bin} migration ref set db <contract>';
+  return new ActionableCliError(
+    'MIGRATION.PLAN_ORIGIN_UNKNOWN',
+    'Cannot determine the plan origin: migrations exist but no origin is named',
+    {
+      why: 'Migrations exist on disk, but there is no `db` ref and no --from was given, so the plan origin would silently fall back to an empty database and the resulting migration would recreate everything the existing migrations already create.',
+      fix: [
+        `Set the \`db\` ref to the contract your dev database is at (\`${refSetCommand}\`), or advance it via \`{bin} db update\`.`,
+        `Or pass the origin explicitly: \`{bin} migration plan ${fromSuggestion}\`.`,
+        'Or pass --from @empty to deliberately plan from an empty database.',
+      ].join('\n'),
+      nextActions: [
+        runCommandAction('Point the db ref at the origin contract', refSetCommand),
+        ...(reachableRefs.length > 0
+          ? reachableRefs.map((ref) =>
+              runCommandAction(`Plan from ${ref.name}`, `{bin} migration plan --from ${ref.name}`),
+            )
+          : [
+              runCommandAction(
+                'Plan from an explicit origin',
+                `{bin} migration plan ${fromSuggestion}`,
+              ),
+            ]),
+        runCommandAction(
+          'Plan from an empty database deliberately',
+          '{bin} migration plan --from @empty',
+        ),
+      ],
+      meta: {
+        reachableRefs: reachableRefs.map((r) => r.name),
+        ...(graphTipHash !== null ? { graphTipHash } : {}),
+      },
+    },
+  );
+}
+
 export function errorMarkerMismatch(
   markerHash: string,
   reachableHashes: readonly string[],

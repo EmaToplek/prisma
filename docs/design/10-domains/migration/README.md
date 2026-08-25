@@ -77,7 +77,7 @@ We explicitly **reject the dev/deploy verb split** that other systems (notably P
 
 ### Off-graph reconciliation is not migration
 
-`db update` reconciles a live database to a target contract **without walking the migration graph**. It does not produce a migration, does not advance a ref, does not consult the marker's prior contract. It is dev-only.
+`db update` reconciles a live database to a target contract **without walking the migration graph**. It does not produce a migration and does not consult the marker's prior contract. On the project's default dev URL it implicitly advances the `db` ref — recording the contract hash the dev database has been brought to, which offline `migration plan` uses as its default origin (`--advance-ref <name>` overrides; `--db <non-default-url>` opts out; see [ADR 218](../../../architecture%20docs/adrs/ADR%20218%20-%20Refs%20with%20paired%20contract%20snapshots%20and%20universal%20graph-node%20invariant.md)). It is dev-only.
 
 - `db update` → reconcile to current contract (the 90% case).
 - `db update --to <contract>` → reconcile to any contract we can name (see *Contract references* below).
@@ -146,6 +146,7 @@ The load-bearing semantics of a ref is **"the contract CD will `migrate --to` in
 Consequences:
 - Refs are **environment-named** (`production`, `staging`, ...). The Git-generic `head` ref has been dropped — it carried no information the emitted `contract.json` doesn't already imply.
 - A ref is a *promise* the repo makes about the next CD run. The PR is the moment that promise is staked.
+- The `db` ref differs in meaning, not mechanics: it records the contract the project's dev database has been brought to (advanced implicitly by `db init`/`db update` on the default URL) and serves as `migration plan`'s default origin. A default name, not a magic one — see [ADR 218](../../../architecture%20docs/adrs/ADR%20218%20-%20Refs%20with%20paired%20contract%20snapshots%20and%20universal%20graph-node%20invariant.md).
 
 ### Initialization vs adoption-by-signing
 
@@ -267,16 +268,16 @@ Grouped by intent.
 
 - **Author** — write a contract or migration in PSL or TypeScript (the meta-verb).
 - **`contract emit`** — produce `contract.json` + `contract.d.ts` from contract source.
-- **`migration plan`** — diff `<ref>` ref's contract → current contract; scaffold a migration package with ops auto-filled; advance the named ref to the new contract's hash. *The "freeze + promise" verb.*
+- **`migration plan`** — diff `<ref>` ref's contract → current contract; scaffold a migration package with ops auto-filled; advance the named ref to the new contract's hash. *The "freeze + promise" verb.* (Ref advancement — `--advance <ref>` — is resolved in the domain model but not yet implemented; tracked under [TML-2560](https://linear.app/prisma-company/issue/TML-2560). Today `plan` advances no ref.)
 - **`migration new`** — scaffold a migration package with `from`/`to` storage hashes but **no ops**. For hand-authored migrations. *Sibling of `plan` — same artifact shape, different ops source.*
 - **`migration compile`** — execute `migration.ts`, (re)write `ops.json` + `migration.json`. The TS → JSON build step; consumers run this after editing `migration.ts` by hand.
-- **`ref set <name> <contract>`** — directly set a ref's target contract. Rarely used by hand; the normal path is `migration plan` advancing a ref atomically. Verb is `set` (not `move`) because refs are stored values being written, not entities traversing the graph — the spatial-movement vocabulary is reserved for `migrate`. No default contract: writing a production-class ref accidentally is too dangerous.
+- **`ref set <name> <contract>`** — directly set a ref's target contract. (In the domain model the normal path is `migration plan --advance <ref>` advancing a ref atomically; that is not yet implemented — tracked under [TML-2560](https://linear.app/prisma-company/issue/TML-2560) — so today `ref set` is the way refs move, and it is the first remedy `MIGRATION.PLAN_ORIGIN_UNKNOWN` suggests.) Verb is `set` (not `move`) because refs are stored values being written, not entities traversing the graph — the spatial-movement vocabulary is reserved for `migrate`. No default contract: writing a production-class ref accidentally is too dangerous.
 
 ### Mutating a live database
 
 - **`migrate --to <contract>`** — *the* migration verb. Walks the graph from the marker's current contract to the target. Forward-only. Same verb everywhere (dev, staging, production); only the DB URL changes.
 - **`db init`** — bootstrap an empty database, or adopt an existing one by executing initial migrations from `∅`. Lays down structure. Live, may mutate.
-- **`db update`** — off-graph reconciliation. `db update` reconciles to the current contract; `db update --to <hash>` reconciles to any contract we can name on disk. **Dev-only.** Does not produce a migration, does not consult the graph, does not advance any ref.
+- **`db update`** — off-graph reconciliation. `db update` reconciles to the current contract; `db update --to <hash>` reconciles to any contract we can name on disk. **Dev-only.** Does not produce a migration and does not consult the graph; on the default dev URL it implicitly advances the `db` ref (`--advance-ref <name>` overrides, `--db <non-default-url>` opts out — see [ADR 218](../../../architecture%20docs/adrs/ADR%20218%20-%20Refs%20with%20paired%20contract%20snapshots%20and%20universal%20graph-node%20invariant.md)).
 - **`db sign [<contract>]`** *(explicit form: `db sign --contract <contract>`)* — verify the live DB satisfies a contract, then write the contract hash into the marker. **Refuses if it doesn't satisfy.** No structural mutation. The adoption path for an already-matching DB. Without an argument, defaults to the current `contract.json`. The argument names *the thing being signed* — distinct from `--to` (movement) used by `migrate` and `db update`.
 
 ### Verification

@@ -1074,6 +1074,10 @@ Migration planning (typically during `db init`/`db update`) failed because of co
 
 An authored migration's `operations` getter returned something other than an array. Fix the migration class so `operations` returns an array of operations. Meta: `dir`, `actualValue` (when known).
 
+### MIGRATION.PLAN_ORIGIN_UNKNOWN
+
+`migration plan` was run without `--from` and without a `db` ref while migrations already exist on disk. Planning would silently fall back to an empty-database origin and produce a migration that recreates everything the existing history already creates, so the command refuses. Set the `db` ref (`migration ref set db <contract>` or `db update`), pass `--from <contract>`, or pass `--from @empty` to deliberately plan from an empty database. Meta: `reachableRefs`, `graphTipHash` (when the graph has a tip).
+
 ### MIGRATION.POLICY_VIOLATION
 
 A planned operation's class (e.g. `destructive`) is not allowed by the execution-time operation policy in force for the command. Runner-level failure during apply. Meta: `operationId`, `operationClass`, `allowedClasses`.

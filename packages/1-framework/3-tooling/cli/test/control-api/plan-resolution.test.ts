@@ -135,6 +135,53 @@ describe('resolveFromForPlan', () => {
     }
   });
 
+  it('refuses plan-origin-unknown when db ref is absent, --from is omitted, and migrations exist', async () => {
+    const bundles = [makePkg(E, HASH_A, 'm1'), makePkg(HASH_A, HASH_B, 'm2')];
+    const space = makeSpace(bundles, { staging: { hash: HASH_B, invariants: [] } });
+    const result = await resolveFromForPlan(baseInput({ space }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expectRefuse(result.failure, 'MIGRATION.PLAN_ORIGIN_UNKNOWN', '--from @empty');
+      expect(result.failure.fix).toContain('--from staging');
+      expect(result.failure.fix).toContain('ref set db');
+      expect(result.failure.meta?.['graphTipHash']).toBe(HASH_B);
+    }
+  });
+
+  it('suggests the graph tip when no ref reaches the graph', async () => {
+    const bundles = [makePkg(E, HASH_A, 'm1')];
+    const space = makeSpace(bundles);
+    const result = await resolveFromForPlan(baseInput({ space }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expectRefuse(result.failure, 'MIGRATION.PLAN_ORIGIN_UNKNOWN', `--from ${HASH_A}`);
+    }
+  });
+
+  it('returns greenfield for --from @empty over a non-empty graph with no db ref', async () => {
+    const bundles = [makePkg(E, HASH_A, 'm1')];
+    const space = makeSpace(bundles);
+    const result = await resolveFromForPlan(baseInput({ space, optionsFrom: '@empty' }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({ kind: 'greenfield', fromHash: null, fromContract: null });
+    }
+  });
+
+  it('returns greenfield for --from @empty even when a db ref exists', async () => {
+    const bundles = [makePkg(E, HASH_A, 'm1')];
+    const space = makeSpace(bundles, { db: { hash: HASH_A, invariants: [] } });
+    const result = await resolveFromForPlan(baseInput({ space, optionsFrom: '@empty' }));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({ kind: 'greenfield', fromHash: null, fromContract: null });
+    }
+  });
+
   it('returns auto-baseline when graph is empty and the db ref resolves through the store', async () => {
     const space = makeSpace(
       [],
@@ -470,6 +517,31 @@ describe('resolveToForPlan', () => {
       expect(result.value.hash).toBe(HASH_A);
     }
     expect(contractAt).toHaveBeenCalledWith(HASH_A, undefined);
+  });
+
+  it('refuses @empty as a target with a wrong-grammar error pointing at --from', async () => {
+    const bundles = [makePkg(E, HASH_A, 'm1')];
+    const contractAt = vi.fn();
+    const space = makeSpace(bundles, {}, contractAt);
+    const result = await resolveToForPlan('@empty', baseToInput({ space }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expectRefuse(result.failure, 'MIGRATION.REF_WRONG_GRAMMAR', '--from @empty');
+      expect(result.failure.message).toContain('origin');
+      expect(result.failure.meta?.['input']).toBe('@empty');
+    }
+    expect(contractAt).not.toHaveBeenCalled();
+  });
+
+  it('refuses @empty as a target on an empty graph too', async () => {
+    const space = makeSpace([]);
+    const result = await resolveToForPlan('@empty', baseToInput({ space }));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expectRefuse(result.failure, 'MIGRATION.REF_WRONG_GRAMMAR', '--from @empty');
+    }
   });
 
   it('maps a not-found reference to a structured error', async () => {
