@@ -123,6 +123,7 @@ describe('tableEntityKind — construct index/check hydration', () => {
       indexes: [idx],
     });
     expect(result.indexes).toEqual([idx]);
+    expect(result.indexes[0]).toBe(idx);
   });
 
   it('hydrates serialized indexes via indexInputFromSerialized', () => {
@@ -149,6 +150,7 @@ describe('tableEntityKind — construct index/check hydration', () => {
       checks: [check],
     });
     expect(result.checks).toEqual([check]);
+    expect(result.checks?.[0]).toBe(check);
   });
 
   it('hydrates serialized checks via checkConstraintInputFromSerialized', () => {
