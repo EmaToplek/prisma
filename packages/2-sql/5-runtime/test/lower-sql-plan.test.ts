@@ -53,11 +53,12 @@ function buildBindSitePlan(): SqlQueryPlan<{ id: number }> {
 describe('lowerSqlPlan', () => {
   it('unwraps literal slots into a bare-value params array and freezes the result', () => {
     const adapter = createStubAdapter();
-    const plan = lowerSqlPlan(adapter, testContract, buildLiteralPlan());
+    const originalPlan = buildLiteralPlan();
+    const plan = lowerSqlPlan(adapter, testContract, originalPlan);
 
     expect(plan.params).toEqual([42]);
-    expect(plan.ast).toBeDefined();
-    expect(plan.meta).toEqual(meta);
+    expect(plan.ast).toBe(originalPlan.ast);
+    expect(plan.meta).toBe(meta);
     expect(Object.isFrozen(plan)).toBe(true);
   });
 
