@@ -82,7 +82,7 @@ describe('evaluateRawGuardrails — unbounded select budget details', () => {
 });
 
 describe('evaluateRawGuardrails — WITH without SELECT', () => {
-  it('falls through to mutation when a WITH clause contains no SELECT keyword', () => {
+  it('classifies a WITH clause with no SELECT keyword as other', () => {
     const result = evaluateRawGuardrails(
       makePlan('WITH cte AS (INSERT INTO users DEFAULT VALUES) INSERT INTO log VALUES (1)'),
     );
