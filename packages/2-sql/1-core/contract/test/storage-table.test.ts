@@ -1,3 +1,4 @@
+import { InternalError } from '@internal/utils/internal-error';
 import { describe, expect, it } from 'vitest';
 import { StorageTable } from '../src/ir/storage-table';
 
@@ -82,6 +83,9 @@ describe('StorageTable.assert', () => {
   });
 
   it('throws InternalError naming the coordinate when the value is not a StorageTable', () => {
+    expect(() => StorageTable.assert(undefined, 'namespaces.public.table.users')).toThrow(
+      InternalError,
+    );
     expect(() => StorageTable.assert(undefined, 'namespaces.public.table.users')).toThrow(
       /Expected a StorageTable at namespaces\.public\.table\.users/,
     );
