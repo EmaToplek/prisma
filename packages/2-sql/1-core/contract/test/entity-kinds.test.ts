@@ -1,10 +1,8 @@
 import { hydrateNamespaceEntities, UNBOUND_NAMESPACE_ID } from '@internal/framework-components/ir';
-import { parseNaming } from '@internal/sql-schema-ir/naming';
 import { describe, expect, it } from 'vitest';
 import { composeSqlEntityKinds, tableEntityKind, valueSetEntityKind } from '../src/entity-kinds';
 import { index } from '../src/factories';
 import { CheckConstraint } from '../src/ir/check-constraint';
-import { Index } from '../src/ir/sql-index';
 import { StorageTable } from '../src/ir/storage-table';
 import { StorageValueSet } from '../src/ir/storage-value-set';
 import type { SerializedCheckConstraint } from '../src/serialized-check-constraint';
@@ -23,6 +21,67 @@ describe('tableEntityKind', () => {
   it('construct produces StorageTable instances', () => {
     const result = tableEntityKind.construct(emptyTableInput);
     expect(result).toBeInstanceOf(StorageTable);
+  });
+
+  describe('given stored records from contract.json', () => {
+    it('hydrates a stored index record into an Index node', () => {
+      const serialized: SerializedIndex = {
+        name: 'users_email_idx_ab12cd34',
+        prefix: 'users_email_idx',
+        columns: ['email'],
+        unique: true,
+      };
+      const result = tableEntityKind.construct({
+        ...emptyTableInput,
+        indexes: [serialized],
+      });
+      expect(result.indexes).toStrictEqual([
+        index('users_email_idx_ab12cd34', ['email'], { prefix: 'users_email_idx', unique: true }),
+      ]);
+    });
+
+    it('hydrates a stored check record into a CheckConstraint node', () => {
+      const serialized: SerializedCheckConstraint = {
+        name: 'users_email_check_ab12cd34',
+        prefix: 'users_email_check',
+        expression: "email <> ''",
+      };
+      const result = tableEntityKind.construct({
+        ...emptyTableInput,
+        checks: [serialized],
+      });
+      expect(result.checks).toStrictEqual([
+        new CheckConstraint({
+          naming: { kind: 'wire', prefix: 'users_email_check', hash: 'ab12cd34' },
+          expression: "email <> ''",
+        }),
+      ]);
+    });
+  });
+
+  describe('given IR nodes from authoring or an earlier hydration pass', () => {
+    it('keeps an existing Index node as the same instance', () => {
+      const idx = index('idx_users_email', ['email'], { unique: true });
+      const result = tableEntityKind.construct({
+        ...emptyTableInput,
+        indexes: [idx],
+      });
+      expect(result.indexes).toEqual([idx]);
+      expect(result.indexes[0]).toBe(idx);
+    });
+
+    it('keeps an existing CheckConstraint node as the same instance', () => {
+      const check = new CheckConstraint({
+        naming: { kind: 'exact', name: 'chk_users_age' },
+        expression: 'age >= 0',
+      });
+      const result = tableEntityKind.construct({
+        ...emptyTableInput,
+        checks: [check],
+      });
+      expect(result.checks).toEqual([check]);
+      expect(result.checks?.[0]).toBe(check);
+    });
   });
 });
 
@@ -106,71 +165,5 @@ describe('hydrateNamespaceEntities with SQL kinds (carry)', () => {
       'carry',
     );
     expect(result[UNBOUND_NAMESPACE_ID]).toBeDefined();
-  });
-});
-
-describe('tableEntityKind — construct index/check hydration', () => {
-  it('passes through indexes that are already Index instances unchanged', () => {
-    const idx = new Index({
-      naming: parseNaming('idx_users_email', undefined),
-      columns: ['email'],
-      where: undefined,
-      unique: true,
-      type: undefined,
-      options: undefined,
-    });
-    const result = tableEntityKind.construct({
-      ...emptyTableInput,
-      indexes: [idx],
-    });
-    expect(result.indexes).toEqual([idx]);
-    expect(result.indexes[0]).toBe(idx);
-  });
-
-  it('hydrates serialized indexes via indexInputFromSerialized', () => {
-    const serialized: SerializedIndex = {
-      name: 'users_email_idx_ab12cd34',
-      prefix: 'users_email_idx',
-      columns: ['email'],
-      unique: true,
-    };
-    const result = tableEntityKind.construct({
-      ...emptyTableInput,
-      indexes: [serialized],
-    });
-    expect(result.indexes).toStrictEqual([
-      index('users_email_idx_ab12cd34', ['email'], { prefix: 'users_email_idx', unique: true }),
-    ]);
-  });
-
-  it('passes through checks that are already CheckConstraint instances unchanged', () => {
-    const check = new CheckConstraint({
-      naming: parseNaming('chk_users_age', undefined),
-      expression: 'age >= 0',
-    });
-    const result = tableEntityKind.construct({
-      ...emptyTableInput,
-      checks: [check],
-    });
-    expect(result.checks).toEqual([check]);
-    expect(result.checks?.[0]).toBe(check);
-  });
-
-  it('hydrates serialized checks via checkConstraintInputFromSerialized', () => {
-    const serialized: SerializedCheckConstraint = {
-      name: 'users_email_check_ab12cd34',
-      prefix: 'users_email_check',
-      expression: "email <> ''",
-    };
-    const result = tableEntityKind.construct({
-      ...emptyTableInput,
-      checks: [serialized],
-    });
-    expect(result.checks).toStrictEqual([
-      new CheckConstraint({
-        naming: { kind: 'wire', prefix: 'users_email_check', hash: 'ab12cd34' },
-        expression: "email <> ''",
-      }),
-    ]);
   });
 });
