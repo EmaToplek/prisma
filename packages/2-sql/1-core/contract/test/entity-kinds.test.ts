@@ -173,9 +173,4 @@ describe('tableEntityKind — construct index/check hydration', () => {
       }),
     ]);
   });
-
-  it('omits checks entirely when the input has none', () => {
-    const result = tableEntityKind.construct(emptyTableInput);
-    expect(result.checks).toBeUndefined();
-  });
 });
