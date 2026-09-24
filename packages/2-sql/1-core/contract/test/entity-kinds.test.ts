@@ -2,6 +2,7 @@ import { hydrateNamespaceEntities, UNBOUND_NAMESPACE_ID } from '@internal/framew
 import { parseNaming } from '@internal/sql-schema-ir/naming';
 import { describe, expect, it } from 'vitest';
 import { composeSqlEntityKinds, tableEntityKind, valueSetEntityKind } from '../src/entity-kinds';
+import { index } from '../src/factories';
 import { CheckConstraint } from '../src/ir/check-constraint';
 import { Index } from '../src/ir/sql-index';
 import { StorageTable } from '../src/ir/storage-table';
@@ -128,16 +129,18 @@ describe('tableEntityKind — construct index/check hydration', () => {
 
   it('hydrates serialized indexes via indexInputFromSerialized', () => {
     const serialized: SerializedIndex = {
-      name: 'idx_users_name',
-      unique: false,
-      columns: ['name'],
+      name: 'users_email_idx_ab12cd34',
+      prefix: 'users_email_idx',
+      columns: ['email'],
+      unique: true,
     };
     const result = tableEntityKind.construct({
       ...emptyTableInput,
       indexes: [serialized],
     });
-    expect(result.indexes[0]).toBeInstanceOf(Index);
-    expect(result.indexes[0]?.name).toBe('idx_users_name');
+    expect(result.indexes).toStrictEqual([
+      index('users_email_idx_ab12cd34', ['email'], { prefix: 'users_email_idx', unique: true }),
+    ]);
   });
 
   it('passes through checks that are already CheckConstraint instances unchanged', () => {
@@ -155,15 +158,20 @@ describe('tableEntityKind — construct index/check hydration', () => {
 
   it('hydrates serialized checks via checkConstraintInputFromSerialized', () => {
     const serialized: SerializedCheckConstraint = {
-      name: 'chk_users_email',
+      name: 'users_email_check_ab12cd34',
+      prefix: 'users_email_check',
       expression: "email <> ''",
     };
     const result = tableEntityKind.construct({
       ...emptyTableInput,
       checks: [serialized],
     });
-    expect(result.checks?.[0]).toBeInstanceOf(CheckConstraint);
-    expect(result.checks?.[0]?.name).toBe('chk_users_email');
+    expect(result.checks).toStrictEqual([
+      new CheckConstraint({
+        naming: { kind: 'wire', prefix: 'users_email_check', hash: 'ab12cd34' },
+        expression: "email <> ''",
+      }),
+    ]);
   });
 
   it('omits checks entirely when the input has none', () => {
