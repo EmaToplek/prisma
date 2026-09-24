@@ -69,6 +69,29 @@ describe('resolveSqlToOneRelationStorage', () => {
     expect(result.columns).toEqual([{ name: 'missingField', nullable: true }]);
   });
 
+  it('falls back to the field name and treats the column as nullable when the field maps to a missing table column', () => {
+    const usersTable = table({ id: col('int4', 'pg/int4@1') });
+    const storage = new SqlStorage({
+      storageHash: 'test' as never,
+      namespaces: {
+        [UNBOUND_NAMESPACE_ID]: createTestSqlNamespace({
+          id: UNBOUND_NAMESPACE_ID,
+          entries: { table: { posts: usersTable } },
+        }),
+      },
+    });
+    const modelStorage = {
+      table: 'posts',
+      namespaceId: UNBOUND_NAMESPACE_ID,
+      fields: { authorId: { column: 'author_id' } },
+    };
+    const relation = makeRelation({ cardinality: 'N:1', localFields: ['authorId'] });
+
+    const result = resolveSqlToOneRelationStorage({ storage } as never, modelStorage, relation);
+
+    expect(result.columns).toEqual([{ name: 'author_id', nullable: true }]);
+  });
+
   it('does not own the foreign key for a 1:1 relation whose table declares no matching foreign key', () => {
     const usersTable = table({ id: col('int4', 'pg/int4@1') });
     const storage = new SqlStorage({
